@@ -150,10 +150,7 @@ class Product_Log_Metabox
         $post_id = absint($_POST['post_id'] ?? 0);
         $offset = absint($_POST['offset'] ?? 0);
 
-        error_log('[LHWC] ajax_load_logs — post_id=' . $post_id . ' offset=' . $offset);
-
         if (!$post_id || 'product' !== get_post_type($post_id)) {
-            error_log('[LHWC] ajax_load_logs — post_id invalide ou pas un produit.');
             wp_send_json_error(['message' => 'Produit invalide.'], 400);
         }
 
@@ -189,22 +186,15 @@ class Product_Log_Metabox
      */
     private static function fetch_all_rows(int $post_id): array
     {
-        error_log('[LHWC] ===== fetch_all_rows START post_id=' . $post_id . ' =====');
-
         // -- 1. Vérification de la classe Log_Query -------------------------
         $log_query = self::make_log_query();
 
         if (null === $log_query) {
-            error_log('[LHWC] ERREUR : aucune classe Log_Query trouvée (SimpleHistoryLogQuery / Simple_History\Log_Query).');
-            error_log('[LHWC] Classes disponibles (filtrage "simple") : ' . implode(', ', array_filter(get_declared_classes(), fn($c) => false !== stripos($c, 'simple'))));
             return [];
         }
 
-        error_log('[LHWC] Log_Query trouvée : ' . get_class($log_query));
-
         // -- 2. Requête SQL directe pour récupérer les history_id ----------
         $post_ids = self::get_history_ids_for_post($post_id, 'SimplePostLogger', 'post_id');
-        error_log('[LHWC] SQL direct SimplePostLogger — ' . count($post_ids) . ' history_id trouvés : ' . implode(', ', array_slice($post_ids, 0, 10)));
 
         // -- 3. Requête Log_Query via context_filters (méthode API) --------
         $args_api = [
@@ -214,51 +204,31 @@ class Product_Log_Metabox
             'loggers' => ['SimplePostLogger'],
             'context_filters' => ['post_id' => (string) $post_id],
         ];
-        error_log('[LHWC] Log_Query args (context_filters) : ' . wp_json_encode($args_api));
 
         $result_api = $log_query->query($args_api);
-        error_log('[LHWC] Log_Query (context_filters) — total_row_count=' . ($result_api['total_row_count'] ?? 'N/A') . ' log_rows=' . count($result_api['log_rows'] ?? []));
 
         // -- 4. Requête Log_Query via post__in (plus fiable) ---------------
         $rows = [];
 
         if (!empty($post_ids)) {
-            $args_postids = [
+            $result_postids = $log_query->query([
                 'posts_per_page' => self::MERGE_LIMIT,
                 'paged' => 1,
                 'ungrouped' => true,
                 'post__in' => $post_ids,
-            ];
-            error_log('[LHWC] Log_Query args (post__in) : ' . count($post_ids) . ' IDs');
-
-            $result_postids = $log_query->query($args_postids);
+            ]);
             $rows = $result_postids['log_rows'] ?? [];
-            error_log('[LHWC] Log_Query (post__in) — total_row_count=' . ($result_postids['total_row_count'] ?? 'N/A') . ' log_rows=' . count($rows));
 
-            // Si post__in a retourné des résultats, on les utilise (plus précis).
-            // Sinon on se rabat sur context_filters.
             if (empty($rows)) {
-                error_log('[LHWC] post__in vide — on utilise le résultat context_filters.');
                 $rows = $result_api['log_rows'] ?? [];
             }
         } else {
-            error_log('[LHWC] Aucun history_id SQL — on utilise uniquement context_filters.');
             $rows = $result_api['log_rows'] ?? [];
-        }
-
-        // Log du premier résultat pour inspecter la structure
-        if (!empty($rows)) {
-            $first = $rows[0];
-            error_log('[LHWC] Premier log — id=' . $first->id . ' date=' . $first->date . ' logger=' . $first->logger . ' message=' . $first->message);
-            error_log('[LHWC] Contexte du premier log : ' . wp_json_encode($first->context ?? []));
         }
 
         // -- 5. Add-on WooCommerce (optionnel) ------------------------------
         if (self::is_wc_addon_active()) {
-            error_log('[LHWC] Add-on WooCommerce détecté.');
-
             $wc_ids = self::get_history_ids_for_post($post_id, 'WooCommerceLogger', 'product_id');
-            error_log('[LHWC] SQL direct WooCommerceLogger — ' . count($wc_ids) . ' history_id trouvés.');
 
             if (!empty($wc_ids)) {
                 $result_wc = $log_query->query([
@@ -267,18 +237,13 @@ class Product_Log_Metabox
                     'ungrouped' => true,
                     'post__in' => $wc_ids,
                 ]);
-                $wc_rows = $result_wc['log_rows'] ?? [];
-                error_log('[LHWC] WooCommerceLogger — ' . count($wc_rows) . ' lignes.');
-                $rows = array_merge($rows, $wc_rows);
+                $rows = array_merge($rows, $result_wc['log_rows'] ?? []);
             }
-        } else {
-            error_log('[LHWC] Add-on WooCommerce non détecté.');
         }
 
         // -- 6. Logger ACF (optionnel) -------------------------------------
         if (self::is_acf_active()) {
             $acf_ids = self::get_history_ids_for_post($post_id, 'LhwcAcfLogger', 'post_id');
-            error_log('[LHWC] LhwcAcfLogger — ' . count($acf_ids) . ' history_id trouvés.');
 
             if (!empty($acf_ids)) {
                 $result_acf = $log_query->query([
@@ -287,15 +252,11 @@ class Product_Log_Metabox
                     'ungrouped' => true,
                     'post__in' => $acf_ids,
                 ]);
-                $acf_rows = $result_acf['log_rows'] ?? [];
-                error_log('[LHWC] LhwcAcfLogger — ' . count($acf_rows) . ' lignes.');
-                $rows = array_merge($rows, $acf_rows);
+                $rows = array_merge($rows, $result_acf['log_rows'] ?? []);
             }
-        } else {
-            error_log('[LHWC] ACF non détecté — LhwcAcfLogger ignoré.');
         }
 
-        // -- 6. Tri + dédoublonnage -----------------------------------------
+        // -- 7. Tri + dédoublonnage -----------------------------------------
         usort($rows, static fn($a, $b) => strtotime($b->date) - strtotime($a->date));
 
         $seen = [];
@@ -306,8 +267,6 @@ class Product_Log_Metabox
             $seen[$row->id] = true;
             return true;
         }));
-
-        error_log('[LHWC] fetch_all_rows END — ' . count($rows) . ' lignes après fusion/dédup.');
 
         return $rows;
     }
@@ -355,62 +314,6 @@ class Product_Log_Metabox
             self::MERGE_LIMIT
         ));
 
-        if ($wpdb->last_error) {
-            error_log('[LHWC] Erreur SQL get_history_ids_for_post : ' . $wpdb->last_error);
-        }
-
-        // Debug étendu : affiche quelques lignes brutes pour ce logger/post
-        $sample = $wpdb->get_results($wpdb->prepare(
-            "SELECT h.id, h.logger, h.date, h.message, h.initiator
-             FROM {$table_c} c
-             INNER JOIN {$table_h} h ON h.id = c.history_id
-             WHERE c.`key` = %s AND c.value = %s
-             ORDER BY h.date DESC
-             LIMIT 5",
-            $context_key,
-            (string) $post_id
-        ));
-
-        error_log('[LHWC] Échantillon SQL (' . $context_key . '=' . $post_id . ') : ' . wp_json_encode($sample));
-
-        // ---------------------------------------------------------------
-        // DEBUG ÉTENDU (uniquement pour SimplePostLogger au premier appel)
-        // ---------------------------------------------------------------
-        if ('SimplePostLogger' === $logger_slug) {
-
-            // 1. Cherche la valeur $post_id dans N'IMPORTE quelle clé de contexte
-            //    → révèle si Simple History stocke l'ID sous un autre nom de clé.
-            $any_key = $wpdb->get_results($wpdb->prepare(
-                "SELECT h.id, h.logger, c.`key` as ctx_key, c.value as ctx_val, h.date
-                 FROM {$table_c} c
-                 INNER JOIN {$table_h} h ON h.id = c.history_id
-                 WHERE c.value = %s
-                 ORDER BY h.date DESC
-                 LIMIT 10",
-                (string) $post_id
-            ));
-            error_log('[LHWC] DEBUG any_key: clés contenant la valeur ' . $post_id . ' : ' . wp_json_encode($any_key));
-
-            // 2. Montre les 5 derniers logs de SimplePostLogger (tous produits confondus)
-            //    → vérifie que Simple History capture bien les sauvegardes de produits.
-            $recent_product = $wpdb->get_results($wpdb->prepare(
-                "SELECT h.id, h.date, h.message, h.initiator,
-                        MAX(CASE WHEN c.`key`='post_id'    THEN c.value END) as ctx_post_id,
-                        MAX(CASE WHEN c.`key`='post_type'  THEN c.value END) as ctx_post_type,
-                        MAX(CASE WHEN c.`key`='_message_key' THEN c.value END) as ctx_msg_key,
-                        MAX(CASE WHEN c.`key`='_user_login'  THEN c.value END) as ctx_user
-                 FROM {$table_h} h
-                 LEFT JOIN {$table_c} c ON c.history_id = h.id
-                 WHERE h.logger = %s
-                 GROUP BY h.id
-                 ORDER BY h.date DESC
-                 LIMIT 5",
-                $logger_slug
-            ));
-            error_log('[LHWC] DEBUG recent_logs SimplePostLogger (5 derniers, tous produits) : ' . wp_json_encode($recent_product));
-        }
-        // ---------------------------------------------------------------
-
         return array_map('intval', $ids ?: []);
     }
 
@@ -444,6 +347,7 @@ class Product_Log_Metabox
     {
         return class_exists('SimpleHistoryWooCommerceLogger')
             || class_exists('\Simple_History\Loggers\WooCommerceLogger')
+            || class_exists('\Simple_History\AddOns\WooCommerce\WooCommerce_Logger')
             || class_exists('WooCommerceLogger');
     }
 
@@ -509,6 +413,14 @@ class Product_Log_Metabox
                     <?php echo wp_kses($message, ['strong' => [], 'em' => [], 'code' => []]); ?>
                 </div>
 
+                <?php
+                $changed_fields_html = self::render_wc_changed_fields($context, $message_key);
+                if ($changed_fields_html): ?>
+                <div class="lhwc-row__changed-fields">
+                    <?php echo $changed_fields_html; // phpcs:ignore WordPress.Security.EscapeOutput ?>
+                </div>
+                <?php endif; ?>
+
                 <?php if ($ip): ?>
                     <div class="lhwc-row__meta">
                         <span class="lhwc-row__ip dashicons-before dashicons-location-alt">
@@ -535,18 +447,24 @@ class Product_Log_Metabox
      */
     private static function interpolate(string $message, array $context, string $message_key = ''): string
     {
-        // Traduction française des messages courants de SimplePostLogger + ACF logger
+        // Traduction française des messages courants de SimplePostLogger + WooCommerce + ACF logger
         $fr_templates = [
             // SimplePostLogger
-            'post_updated' => 'Produit modifié : {post_title}',
-            'post_created' => 'Produit créé : {post_title}',
-            'post_trashed' => 'Produit mis à la corbeille : {post_title}',
-            'post_deleted' => 'Produit supprimé définitivement : {post_title}',
-            'post_restored' => 'Produit restauré : {post_title}',
-            'post_status_changed' => 'Statut changé ({post_prev_status} → {post_new_status}) : {post_title}',
-            'post_published' => 'Produit publié : {post_title}',
-            // LhwcAcfLogger
-            'acf_field_updated' => 'Champ <em>{field_label}</em> modifié : {old_value} → {new_value}',
+            'post_updated'          => 'Produit modifié : {post_title}',
+            'post_created'          => 'Produit créé : {post_title}',
+            'post_trashed'          => 'Produit mis à la corbeille : {post_title}',
+            'post_deleted'          => 'Produit supprimé définitivement : {post_title}',
+            'post_restored'         => 'Produit restauré : {post_title}',
+            'post_status_changed'   => 'Statut changé ({post_prev_status} → {post_new_status}) : {post_title}',
+            'post_published'        => 'Produit publié : {post_title}',
+            // WooCommerceLogger
+            'product_created'       => 'Produit créé : {product_title}',
+            'product_updated'       => 'Produit mis à jour : {product_title}',
+            'product_trashed'       => 'Produit mis à la corbeille : {product_title}',
+            'product_untrashed'     => 'Produit restauré : {product_title}',
+            'product_deleted'       => 'Produit supprimé définitivement : {product_title}',
+            // LhwcAcfLogger (le tableau old→new est rendu séparément via render_changed_fields)
+            'acf_field_updated'     => 'Champ ACF modifié : <em>{field_label}</em>',
         ];
 
         $template = $fr_templates[$message_key] ?? $message;
@@ -574,18 +492,188 @@ class Product_Log_Metabox
     private static function event_icon(string $message_key, string $logger): string
     {
         $map = [
-            'post_created' => 'plus-alt2 lhwc-icon--created',
-            'post_updated' => 'edit lhwc-icon--updated',
-            'post_trashed' => 'trash lhwc-icon--trashed',
-            'post_deleted' => 'dismiss lhwc-icon--deleted',
-            'post_restored' => 'undo lhwc-icon--restored',
+            'post_created'      => 'plus-alt2 lhwc-icon--created',
+            'post_updated'      => 'edit lhwc-icon--updated',
+            'post_trashed'      => 'trash lhwc-icon--trashed',
+            'post_deleted'      => 'dismiss lhwc-icon--deleted',
+            'post_restored'     => 'undo lhwc-icon--restored',
             'post_status_changed' => 'flag lhwc-icon--status',
-            'post_published' => 'visibility lhwc-icon--published',
+            'post_published'    => 'visibility lhwc-icon--published',
             'acf_field_updated' => 'editor-textcolor lhwc-icon--acf',
+            // WooCommerceLogger
+            'product_created'   => 'plus-alt2 lhwc-icon--created',
+            'product_updated'   => 'edit lhwc-icon--updated',
+            'product_trashed'   => 'trash lhwc-icon--trashed',
+            'product_untrashed' => 'undo lhwc-icon--restored',
+            'product_deleted'   => 'dismiss lhwc-icon--deleted',
         ];
 
         $default = 'SimplePostLogger' === $logger ? 'info-outline lhwc-icon--info' : 'cart lhwc-icon--woo';
 
         return '<span class="dashicons dashicons-' . esc_attr($map[$message_key] ?? $default) . '"></span>';
+    }
+
+    /**
+     * Génère le HTML des champs modifiés pour un log WooCommerceLogger.
+     *
+     * Extrait les paires {champ}_new / {champ}_prev du contexte et les affiche
+     * sous forme de tableau (ancienne valeur → nouvelle valeur).
+     *
+     * @param array  $context     Contexte du log.
+     * @param string $message_key Clé du message.
+     * @return string HTML ou chaîne vide.
+     */
+    private static function render_wc_changed_fields(array $context, string $message_key): string
+    {
+        $wc_message_keys = ['product_created', 'product_updated', 'product_trashed', 'product_untrashed', 'product_deleted'];
+        if (!in_array($message_key, $wc_message_keys, true)) {
+            return '';
+        }
+
+        // Étiquettes françaises des champs WooCommerce.
+        $labels = [
+            'title'              => 'Titre',
+            'product_type'       => 'Type de produit',
+            'status'             => 'Statut',
+            'featured'           => 'Mise en avant',
+            'catalog_visibility' => 'Visibilité catalogue',
+            'description'        => 'Description',
+            'short_description'  => 'Description courte',
+            'sku'                => 'UGS',
+            'price'              => 'Prix',
+            'regular_price'      => 'Prix normal',
+            'sale_price'         => 'Prix promo',
+            'date_on_sale_from'  => 'Début promo',
+            'date_on_sale_to'    => 'Fin promo',
+            'manage_stock'       => 'Gestion du stock',
+            'stock_quantity'     => 'Quantité en stock',
+            'stock_status'       => 'État du stock',
+            'backorders'         => 'Commandes en attente',
+            'low_stock_amount'   => 'Seuil de stock faible',
+            'sold_individually'  => 'Vente individuelle',
+            'weight'             => 'Poids',
+            'length'             => 'Longueur',
+            'width'              => 'Largeur',
+            'height'             => 'Hauteur',
+            'shipping_class_id'  => 'Classe de livraison',
+            'tax_status'         => 'Statut TVA',
+            'tax_class'          => 'Classe TVA',
+            'reviews_allowed'    => 'Avis clients',
+            'virtual'            => 'Virtuel',
+            'downloadable'       => 'Téléchargeable',
+            'image_id'           => 'Image principale',
+            'slug'               => 'Permalien',
+            'upsell_ids'         => 'Ventes incitatives',
+            'cross_sell_ids'     => 'Ventes croisées',
+            'attributes_added'   => 'Attributs ajoutés',
+            'attributes_removed' => 'Attributs supprimés',
+            'attributes_modified' => 'Attributs modifiés',
+            'name'               => 'Nom',
+            'purchase_note'      => 'Note d\'achat',
+            'download_limit'     => 'Limite de téléchargement',
+            'download_expiry'    => 'Expiration du téléchargement',
+        ];
+
+        // Traductions des valeurs courantes.
+        $value_labels = [
+            'instock'     => 'En stock',
+            'outofstock'  => 'Rupture de stock',
+            'onbackorder' => 'En réapprovisionnement',
+            'yes'         => 'Oui',
+            'no'          => 'Non',
+            'taxable'     => 'Taxable',
+            'shipping'    => 'Livraison seulement',
+            'none'        => 'Aucune',
+            'visible'     => 'Visible',
+            'catalog'     => 'Catalogue',
+            'search'      => 'Recherche',
+            'hidden'      => 'Masqué',
+            'simple'      => 'Produit simple',
+            'variable'    => 'Produit variable',
+            'grouped'     => 'Produit groupé',
+            'external'    => 'Produit externe',
+            'publish'     => 'Publié',
+            'draft'       => 'Brouillon',
+            'private'     => 'Privé',
+            'pending'     => 'En attente',
+        ];
+
+        $translate_value = static function (string $val) use ($value_labels): string {
+            return $value_labels[$val] ?? $val;
+        };
+
+        // Collecte les paires _new / _prev.
+        $changes = [];
+        foreach ($context as $key => $value) {
+            if (substr($key, -4) !== '_new') {
+                continue;
+            }
+            $field = substr($key, 0, -4);
+            // Ignore les clés internes Simple History.
+            if (in_array($field, ['product_id', 'product_title', '_user', '_server', '_message'], true)) {
+                continue;
+            }
+            $prev_key = $field . '_prev';
+            $new_val  = is_array($value) ? wp_json_encode($value) : (string) $value;
+            $prev_val = isset($context[$prev_key])
+                ? (is_array($context[$prev_key]) ? wp_json_encode($context[$prev_key]) : (string) $context[$prev_key])
+                : null;
+
+            // N'affiche que si la valeur a changé (ou si c'est une création sans valeur précédente).
+            if ($new_val === $prev_val) {
+                continue;
+            }
+
+            $changes[$field] = [
+                'label' => $labels[$field] ?? ucfirst(str_replace('_', ' ', $field)),
+                'prev'  => null !== $prev_val ? $translate_value($prev_val) : null,
+                'new'   => $translate_value($new_val),
+            ];
+        }
+
+        // Attributs (stockés dans des clés spéciales sans suffixe _new/_prev).
+        foreach (['attributes_added', 'attributes_removed', 'attributes_modified'] as $attr_key) {
+            if (!empty($context[$attr_key])) {
+                $raw = $context[$attr_key];
+                $changes[$attr_key] = [
+                    'label' => $labels[$attr_key],
+                    'prev'  => null,
+                    'new'   => is_string($raw) ? $raw : wp_json_encode($raw),
+                ];
+            }
+        }
+
+        if (empty($changes)) {
+            return '';
+        }
+
+        ob_start();
+        ?>
+        <table class="lhwc-fields-table">
+            <thead>
+                <tr>
+                    <th>Champ</th>
+                    <th>Avant</th>
+                    <th>Après</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php foreach ($changes as $change): ?>
+                <tr>
+                    <td class="lhwc-field-name"><?php echo esc_html($change['label']); ?></td>
+                    <td class="lhwc-field-prev">
+                        <?php if (null !== $change['prev']): ?>
+                            <del><?php echo esc_html($change['prev']); ?></del>
+                        <?php else: ?>
+                            <em>—</em>
+                        <?php endif; ?>
+                    </td>
+                    <td class="lhwc-field-new"><?php echo esc_html($change['new']); ?></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+        <?php
+        return ob_get_clean();
     }
 }

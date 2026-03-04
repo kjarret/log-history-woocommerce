@@ -29,9 +29,8 @@ class ACF_Logger extends \Simple_History\Loggers\Logger {
         return [
             'name'        => 'LHWC — Champs ACF WooCommerce',
             'description' => 'Enregistre les modifications de champs ACF sur les produits WooCommerce.',
-            'capability'  => 'edit_products',
             'messages'    => [
-                __CLASS__ . '.acf_field_updated' => 'Champ ACF {field_label} modifié',
+                'acf_field_updated' => 'Champ ACF {field_label} modifié',
             ],
         ];
     }
@@ -76,8 +75,6 @@ class ACF_Logger extends \Simple_History\Loggers\Logger {
         }
 
         self::$old_values[ $post_id ] = $old;
-
-        error_log( '[LHWC ACF] capture_old_values post_id=' . $post_id . ' — ' . count( $old ) . ' champs.' );
     }
 
     // -------------------------------------------------------------------------
@@ -126,15 +123,6 @@ class ACF_Logger extends \Simple_History\Loggers\Logger {
             $old_formatted = self::format_value( $old_val, $field );
             $new_formatted = self::format_value( $new_val, $field );
 
-            error_log( sprintf(
-                '[LHWC ACF] log_changes — post_id=%d champ="%s" (%s) : "%s" → "%s"',
-                $post_id,
-                $field['label'],
-                $field['type'],
-                $old_formatted,
-                $new_formatted
-            ) );
-
             $this->info_message(
                 'acf_field_updated',
                 [
@@ -150,8 +138,6 @@ class ACF_Logger extends \Simple_History\Loggers\Logger {
 
             ++$logged;
         }
-
-        error_log( '[LHWC ACF] log_changes post_id=' . $post_id . ' — ' . $logged . ' champ(s) loggué(s).' );
 
         // Nettoyer pour éviter les fuites mémoire sur les imports batch
         unset( self::$old_values[ $post_id ] );

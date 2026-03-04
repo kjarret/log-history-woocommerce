@@ -56,7 +56,6 @@ add_action('plugins_loaded', function () {
         if (function_exists('acf_get_field')) {
             require_once LHWC_PLUGIN_DIR . 'includes/class-acf-logger.php';
             $simple_history->register_logger(\LHWC\ACF_Logger::class);
-            error_log('[LHWC] ACF_Logger enregistré.');
         }
     });
 });

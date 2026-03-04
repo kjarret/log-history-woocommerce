@@ -210,3 +210,74 @@
     color: #8c8f94;
     font-style: italic;
 }
+
+/* Tableau des champs modifiés (WooCommerce) -------------------------------- */
+.lhwc-row__changed-fields {
+    margin-top: 6px;
+}
+
+.lhwc-fields-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    line-height: 1.4;
+    border: 1px solid #e0e0e0;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.lhwc-fields-table thead tr {
+    background: #f0f0f1;
+}
+
+.lhwc-fields-table th {
+    padding: 4px 8px;
+    text-align: left !important;
+    font-weight: 600;
+    color: #50575e;
+    border-bottom: 1px solid #e0e0e0;
+    white-space: nowrap;
+}
+
+.lhwc-fields-table td {
+    padding: 3px 8px;
+    vertical-align: top;
+    border-bottom: 1px solid #f0f0f0;
+    color: #3c434a;
+    word-break: break-word;
+}
+
+.lhwc-fields-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.lhwc-fields-table tbody tr:nth-child(even) {
+    background: #fafafa;
+}
+
+.lhwc-field-name {
+    font-weight: 600;
+    color: #1d2327 !important;
+    white-space: nowrap;
+    width: 30%;
+}
+
+.lhwc-field-prev {
+    color: #d63638 !important;
+    width: 35%;
+}
+
+.lhwc-field-prev del {
+    color: #d63638;
+}
+
+.lhwc-field-prev em {
+    color: #b4b9be !important;
+    font-style: normal;
+}
+
+.lhwc-field-new {
+    color: #00a32a !important;
+    width: 35%;
+    font-weight: 600;
+}
